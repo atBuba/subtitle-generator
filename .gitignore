@@ -1,0 +1,7 @@
+venv/
+__pycache__/
+*.pyc
+db.sqlite3
+.env
+subtitle_generator/subtitle_generator_app/migrations
+subtitle_generator/subtitle_generator_app/media

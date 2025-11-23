@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./subtitle_generator_app/media:/app/subtitle_generator_app/media
+      - ./db:/app/db
+    environment:
+      - DJANGO_SETTINGS_MODULE=subtitle_generator.settings
+      - SECRET_KEY=django-insecure-docker-secret-key-change-in-production
+      - DEBUG=True
+      - ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0
+    command: >
+      sh -c "python subtitle_generator/manage.py migrate --run-syncdb &&
+             python subtitle_generator/manage.py runserver 0.0.0.0:8000"
+    restart: unless-stopped
