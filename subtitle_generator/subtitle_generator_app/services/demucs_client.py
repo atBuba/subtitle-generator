@@ -2,9 +2,10 @@ import os
 import json
 import time
 import requests
+from django.conf import settings
 
 # Константы
-API_TOKEN = ""
+API_TOKEN = settings.DEMUCS_API_KEY
 BASE_URL = "https://mvsep.com/api/separation"
 
 # Путь к вашему файлу (проверьте, что он существует)

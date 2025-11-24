@@ -154,3 +154,8 @@ CORS_ALLOW_HEADERS = [
     'x-csrftoken',
     'x-requested-with',
 ]
+
+from dotenv import load_dotenv
+load_dotenv()
+OPENAI_API_KEY=os.getenv('OPENAI_API_KEY')
+DEMUCS_API_KEY=os.getenv('DEMUCS_API_KEY')
