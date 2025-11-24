@@ -6,7 +6,7 @@ services:
   web:
     build: .
     ports:
-      - "8000:8000"
+      - "8001:8000"
     volumes:
       - ./subtitle_generator/subtitle_generator_app/media:/app/subtitle_generator/subtitle_generator_app/media
       - ./subtitle_generator:/app/subtitle_generator
@@ -26,6 +26,22 @@ services:
     restart: unless-stopped
 
   celery:
+    image: lscr.io/linuxserver/wireguard:latest
+    #container_name: wireguard
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - PUID=1000
+      - PGID=1000
+    volumes:
+      - ./wg/config:/config
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+    restart: unless-stopped
+
+
+
+  celery_backend:
     build: .
     volumes:
       - ./subtitle_generator/subtitle_generator_app/media:/app/subtitle_generator/subtitle_generator_app/media
@@ -39,6 +55,7 @@ services:
       - CELERY_BROKER_URL=redis://redis:6379/0
     depends_on:
       - redis
+      - celery
     command: sh -c "cd subtitle_generator && celery -A subtitle_generator worker --loglevel=info"
     restart: unless-stopped
-
+    network_mode: service:celery
