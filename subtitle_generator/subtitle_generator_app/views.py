@@ -10,6 +10,7 @@ from .models import Project
 from .forms import ProjectForm
 from .ranged_file_response import ranged_file_response
 from .services import audio_separator, whisper_client
+from .tasks import process_audio_task
 
 def project_list(request):
     """Страница со списком всех проектов"""
@@ -56,62 +57,31 @@ def project_create(request):
         form = ProjectForm(request.POST, request.FILES)
         if form.is_valid():
             project = form.save(commit=False)
-            # Устанавливаем статус Draft по умолчанию
-            project.status = 'processing'  # Меняем на processing, так как начнем обработку
+            project.status = 'draft'
             
-            # Обработка загруженного аудио файла
             if 'audio_file' in request.FILES:
                 audio_file = request.FILES['audio_file']
                 if audio_file:
-                    # Генерируем уникальное имя файла
+                    # Сохраняем файл
                     file_extension = audio_file.name.split('.')[-1].lower()
-                    unique_filename = f"{uuid.uuid4()}_{audio_file.name.replace('.', '_')}.{file_extension}"
-                    
-                    # Сохраняем аудио файл
+                    unique_filename = f"{uuid.uuid4()}.{file_extension}"
                     project.audio.save(unique_filename, audio_file, save=False)
-                    
-                    # Сохраняем проект для получения ID
                     project.save()
                     
-                    try:
-                        # Шаг 1: Разделяем аудио на вокал и инструментал
-                        audio_path = project.get_audio_path()
-                        vocal_path, instrumental_path = audio_separator.separate_audio(project.id, audio_path)
-                        
-                        # Шаг 2: Сохраняем пути к разделенным файлам
-                        project.vocal_audio.name = vocal_path
-                        project.instrumental_audio.name = instrumental_path
-                        project.save()
-                        
-                        # Шаг 3: Транскрибируем вокальную дорожку
-                        vocal_full_path = os.path.join(settings.MEDIA_ROOT, vocal_path)
-                        print(vocal_full_path)
-                        srt_content = whisper_client.transcribe_audio_vocal(vocal_full_path)
-                        
-                        # Шаг 4: Сохраняем субтитры
-                        srt_filename = f"{uuid.uuid4()}_{project.name}_subtitles.srt"
-                        srt_path = os.path.join('subtitle/srt', srt_filename)
-                        full_srt_path = os.path.join(settings.MEDIA_ROOT, srt_path)
-                        
-                        with open(full_srt_path, 'w', encoding='utf-8') as f:
-                            f.write(srt_content)
-                        
-                        project.subtitle.name = srt_path
-                        project.status = 'completed'
-                        project.save()
-                        
-                        messages.success(request, f'Проект "{project.name}" успешно создан и обработан!')
-                        
-                    except Exception as e:
-                        project.status = 'failed'
-                        project.save()
-                        messages.error(request, f'Ошибка при обработке аудио: {str(e)}')
-                        return redirect('project_detail', project_id=project.id)
+                    # Запускаем обработку в фоне
+                    process_audio_task.delay(project.id)
                     
+                    messages.success(
+                        request,
+                        f'Проект "{project.name}" создан! Обработка началась.'
+                    )
                     return redirect('project_detail', project_id=project.id)
             else:
                 project.save()
-                messages.success(request, f'Проект "{project.name}" успешно создан!')
+                messages.warning(
+                    request,
+                    f'Проект создан без аудиофайла.'
+                )
                 return redirect('project_detail', project_id=project.id)
     else:
         form = ProjectForm()

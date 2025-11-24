@@ -3,3 +3,5 @@ openai==2.8.1
 django-cors-headers==4.4.0
 requests==2.32.5
 python_dotenv==1.2.1
+celery==5.3.4
+redis==5.0.1

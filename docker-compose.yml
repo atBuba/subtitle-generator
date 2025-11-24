@@ -1,19 +1,44 @@
-version: '3.8'
-
 services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+
   web:
     build: .
     ports:
       - "8000:8000"
     volumes:
-      - ./subtitle_generator_app/media:/app/subtitle_generator_app/media
-      - ./db:/app/db
+      - ./subtitle_generator/subtitle_generator_app/media:/app/subtitle_generator/subtitle_generator_app/media
+      - ./subtitle_generator:/app/subtitle_generator
+    env_file:
+      - .env
     environment:
       - DJANGO_SETTINGS_MODULE=subtitle_generator.settings
       - SECRET_KEY=django-insecure-docker-secret-key-change-in-production
       - DEBUG=True
       - ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    depends_on:
+      - redis
     command: >
       sh -c "python subtitle_generator/manage.py migrate --run-syncdb &&
              python subtitle_generator/manage.py runserver 0.0.0.0:8000"
     restart: unless-stopped
+
+  celery:
+    build: .
+    volumes:
+      - ./subtitle_generator/subtitle_generator_app/media:/app/subtitle_generator/subtitle_generator_app/media
+      - ./subtitle_generator:/app/subtitle_generator
+    env_file:
+      - .env
+    environment:
+      - DJANGO_SETTINGS_MODULE=subtitle_generator.settings
+      - SECRET_KEY=django-insecure-docker-secret-key-change-in-production
+      - DEBUG=True
+      - CELERY_BROKER_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+    command: sh -c "cd subtitle_generator && celery -A subtitle_generator worker --loglevel=info"
+    restart: unless-stopped
+

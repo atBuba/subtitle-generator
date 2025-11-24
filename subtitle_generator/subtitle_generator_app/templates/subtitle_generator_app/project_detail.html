@@ -2254,4 +2254,15 @@ document.addEventListener('DOMContentLoaded', function() {
 }
 </style>
 </script>
+
+<script>
+// Автообновление если проект обрабатывается
+(function() {
+    const status = '{{ project.status }}';
+    if (status === 'processing' || status === 'draft') {
+        setTimeout(() => location.reload(), 5000);
+    }
+})();
+</script>
+
 {% endblock %}

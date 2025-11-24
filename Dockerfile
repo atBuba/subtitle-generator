@@ -27,7 +27,7 @@ ENV PYTHONPATH=/app
 ENV DJANGO_SETTINGS_MODULE=subtitle_generator.settings
 
 # Собираем статические файлы
-RUN python subtitle_generator/manage.py collectstatic --noinput
+# RUN python subtitle_generator/manage.py collectstatic --noinput
 
 # Открываем порт
 EXPOSE 8000
