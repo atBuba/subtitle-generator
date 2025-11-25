@@ -17,7 +17,8 @@ def transcribe_audio_vocal(vocal_file_path):
             model="whisper-1",
             prompt="Transcribe the song lyrics accurately. Ignore silence.",
             file=audio_file,
-            response_format="srt"
+            response_format="srt",
+            temperature=0,
         )
     
     return transcription
