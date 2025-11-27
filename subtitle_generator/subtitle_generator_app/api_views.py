@@ -11,10 +11,12 @@ from django.db import transaction
 from .models import Project
 from .services.whisper_client import transcribe_audio
 
-def generate_unique_filename(original_filename, extension):
-    """Генерирует уникальное имя файла"""
-    unique_id = str(uuid.uuid4())[:8]
-    return f"{unique_id}_{original_filename.replace('.', '_')}.{extension}"
+def generate_clean_filename(project_name, extension):
+    """Генерирует чистое имя файла на основе названия проекта без uuid"""
+    # Очищаем название проекта от недопустимых символов для файлов
+    clean_name = "".join(c for c in project_name if c.isalnum() or c in (' ', '-', '_')).rstrip()
+    clean_name = clean_name.replace(' ', '_')
+    return f"{clean_name}.{extension}"
 
 def validate_srt_format(content):
     """
@@ -114,7 +116,6 @@ def generate_subtitles(request):
             
             # Генерируем уникальные имена файлов
             audio_filename = generate_unique_filename(audio_file.name, file_extension)
-            subtitle_filename = generate_unique_filename(project_name.replace(' ', '_'), 'srt')
             
             # Сохраняем аудио файл
             project.audio.save(audio_filename, audio_file, save=False)
@@ -126,7 +127,8 @@ def generate_subtitles(request):
                 # Используем функцию транскрибации
                 srt_content = transcribe_audio(audio_path)
                 
-                # Сохраняем субтитры в файл
+                # Генерируем чистое имя файла субтитров без uuid
+                subtitle_filename = generate_clean_filename(project_name, 'srt')
                 subtitle_content = ContentFile(srt_content.encode('utf-8'))
                 project.subtitle.save(subtitle_filename, subtitle_content, save=False)
                 
@@ -268,15 +270,15 @@ def generate_subtitles_for_project(request, project_id):
         audio_path = project.get_audio_path()
         
         try:
-            # Генерируем уникальное имя для файла субтитров
-            subtitle_filename = f"{project.id}_{project.name.replace(' ', '_')}_subtitles.srt"
+            # Генерируем чистое имя файла субтитров без uuid
+            subtitle_filename = generate_clean_filename(project.name, 'srt')
             
             # Используем функцию транскрибации
             srt_content = transcribe_audio(audio_path)
             
             # Сохраняем субтитры в файл
             subtitle_content = ContentFile(srt_content.encode('utf-8'))
-            project.subtitle.save(f"{subtitle_filename}", subtitle_content, save=False)
+            project.subtitle.save(subtitle_filename, subtitle_content, save=False)
             
             # Обновляем статус проекта
             project.status = 'completed'

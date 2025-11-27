@@ -34,7 +34,10 @@ def process_audio_task(self, project_id):
         srt_content = whisper_client.transcribe_audio_vocal(vocal_full_path)
         
         # Шаг 3: Сохранение субтитров
-        srt_filename = f"{uuid.uuid4()}_{project.name}_subtitles.srt"
+        # Генерируем чистое имя файла без uuid на основе названия проекта
+        clean_name = "".join(c for c in project.name if c.isalnum() or c in (' ', '-', '_')).rstrip()
+        clean_name = clean_name.replace(' ', '_')
+        srt_filename = f"{clean_name}.srt"
         srt_path = os.path.join('subtitle/srt', srt_filename)
         full_srt_path = os.path.join(settings.MEDIA_ROOT, srt_path)
         

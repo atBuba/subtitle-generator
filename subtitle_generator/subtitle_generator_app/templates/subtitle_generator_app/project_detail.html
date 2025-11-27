@@ -77,6 +77,19 @@
                 </div>
             </div>
             {% else %}
+            {% if project.status == 'processing' or project.status == 'draft' %}
+            <div class="content-card">
+                <div class="subtitle-generation-animation">
+                    <div class="simple-loader">
+                        <div class="loading-circle"></div>
+                        <div class="loading-text">
+                            <h3>Генерация субтитров</h3>
+                            <p>Пожалуйста, подождите...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% else %}
             <div class="content-card">
                 <div class="empty-state">
                 <div class="empty-content">
@@ -94,6 +107,7 @@
                 </div>
                     </div>
                 </div>
+            {% endif %}
             {% endif %}
         </div>
         
@@ -1366,6 +1380,11 @@ document.addEventListener('DOMContentLoaded', function() {
     overflow: hidden;
 }
 
+.subtitle-generation-animation {
+    flex: 1;
+    min-height: 0;
+}
+
 .subtitle-column .card-content {
     flex: 1;
     overflow-y: auto; /* Вертикальная прокрутка */
@@ -2242,6 +2261,172 @@ document.addEventListener('DOMContentLoaded', function() {
         padding: 16px;
     }
 }
+
+/* Простая анимация генерации субтитров */
+.subtitle-generation-animation {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    width: 100%;
+    text-align: center;
+    background: #f8fafc;
+    border-radius: 16px;
+    border: 1px solid #e2e8f0;
+}
+
+.simple-loader {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+}
+
+.loading-circle {
+    width: 60px;
+    height: 60px;
+    border: 4px solid #e5e7eb;
+    border-top: 4px solid #4f46e5;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+.loading-text h3 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: #1a202c;
+    margin: 0 0 8px 0;
+}
+
+.loading-text p {
+    font-size: 1rem;
+    color: #6b7280;
+    margin: 0;
+}
+
+/* Адаптивность для красивой анимации */
+@media (max-width: 768px) {
+    .subtitle-generation-animation {
+        min-height: 350px;
+        padding: 30px 15px;
+    }
+    
+    .wave-container {
+        width: 100px;
+        height: 100px;
+    }
+    
+    .wave {
+        border-width: 1.5px;
+    }
+    
+    .wave-1 {
+        width: 50px;
+        height: 50px;
+        margin: -25px 0 0 -25px;
+    }
+    
+    .wave-2 {
+        width: 65px;
+        height: 65px;
+        margin: -32.5px 0 0 -32.5px;
+    }
+    
+    .wave-3 {
+        width: 80px;
+        height: 80px;
+        margin: -40px 0 0 -40px;
+    }
+    
+    .wave-4 {
+        width: 100px;
+        height: 100px;
+        margin: -50px 0 0 -50px;
+    }
+    
+    .generation-text h3 {
+        font-size: 1.5rem;
+    }
+    
+    .generation-text p {
+        font-size: 0.875rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .subtitle-generation-animation {
+        min-height: 300px;
+        padding: 25px 10px;
+    }
+    
+    .wave-container {
+        width: 80px;
+        height: 80px;
+    }
+    
+    .wave {
+        border-width: 1px;
+    }
+    
+    .wave-1 {
+        width: 40px;
+        height: 40px;
+        margin: -20px 0 0 -20px;
+    }
+    
+    .wave-2 {
+        width: 50px;
+        height: 50px;
+        margin: -25px 0 0 -25px;
+    }
+    
+    .wave-3 {
+        width: 60px;
+        height: 60px;
+        margin: -30px 0 0 -30px;
+    }
+    
+    .wave-4 {
+        width: 80px;
+        height: 80px;
+        margin: -40px 0 0 -40px;
+    }
+    
+    .sound-waves {
+        gap: 2px;
+        height: 30px;
+    }
+    
+    .sound-bar {
+        width: 3px;
+    }
+    
+    .sound-bar:nth-child(1) { height: 15px; }
+    .sound-bar:nth-child(2) { height: 22px; }
+    .sound-bar:nth-child(3) { height: 12px; }
+    .sound-bar:nth-child(4) { height: 25px; }
+    .sound-bar:nth-child(5) { height: 18px; }
+    .sound-bar:nth-child(6) { height: 30px; }
+    .sound-bar:nth-child(7) { height: 14px; }
+    .sound-bar:nth-child(8) { height: 22px; }
+    
+    .generation-text h3 {
+        font-size: 1.25rem;
+    }
+    
+    .generation-text p {
+        font-size: 0.75rem;
+    }
+    
+    .status-indicator {
+        padding: 10px 16px;
+    }
+    
+    .status-text {
+        font-size: 12px;
+    }
+}
 </style>
 </script>
 
@@ -2251,6 +2436,69 @@ document.addEventListener('DOMContentLoaded', function() {
     const status = '{{ project.status }}';
     if (status === 'processing' || status === 'draft') {
         setTimeout(() => location.reload(), 50000);
+    }
+})();
+
+// Обновление текста прогресса в зависимости от статуса
+(function() {
+    const status = '{{ project.status }}';
+    
+    if (status === 'processing') {
+        const progressText = document.querySelector('.progress-text');
+        
+        if (progressText) {
+            const progressMessages = [
+                'Идет распознавание речи',
+                'Обработка аудио',
+                'Создание временных меток',
+                'Форматирование субтитров'
+            ];
+            
+            let currentIndex = 0;
+            setInterval(() => {
+                currentIndex = (currentIndex + 1) % progressMessages.length;
+                progressText.textContent = progressMessages[currentIndex];
+            }, 3000);
+        }
+    } else if (status === 'draft') {
+        const minimalText = document.querySelector('.minimal-text p');
+        
+        if (minimalText) {
+            const draftMessages = [
+                'Идет подготовка к генерации',
+                'Настройка параметров обработки',
+                'Подготовка аудио для анализа'
+            ];
+            
+            let currentIndex = 0;
+            setInterval(() => {
+                currentIndex = (currentIndex + 1) % draftMessages.length;
+                minimalText.textContent = draftMessages[currentIndex];
+            }, 4000);
+        }
+    }
+})();
+
+// Обновление текста в красивой анимации
+(function() {
+    const status = '{{ project.status }}';
+    const generationText = document.querySelector('.generation-text p');
+    
+    if (generationText && (status === 'processing' || status === 'draft')) {
+        const messages = [
+            'Анализируем аудио дорожку',
+            'Распознаем речь и диалоги',
+            'Создаем временные метки',
+            'Форматируем субтитры',
+            'Проверяем качество распознавания',
+            'Готовим финальный файл'
+        ];
+        
+        let currentIndex = 0;
+        setInterval(() => {
+            currentIndex = (currentIndex + 1) % messages.length;
+            generationText.textContent = messages[currentIndex];
+        }, 3500);
     }
 })();
 </script>

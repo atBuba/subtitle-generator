@@ -96,7 +96,10 @@ def project_detail(request, project_id):
             
             # Шаг 3: Сохраняем аудио файл в проект
             audio_content = ContentFile(response.content)
-            audio_filename = f'track_{project_id}.{extension}'
+            # Генерируем чистое имя файла без uuid
+            clean_name = "".join(c for c in project_name if c.isalnum() or c in (' ', '-', '_')).rstrip()
+            clean_name = clean_name.replace(' ', '_')
+            audio_filename = f"{clean_name}.{extension}"
             project.audio.save(audio_filename, audio_content, save=False)
             project.save()
             
@@ -139,8 +142,10 @@ def project_create(request):
                 if audio_file:
                     # Сохраняем файл
                     file_extension = audio_file.name.split('.')[-1].lower()
-                    unique_filename = f"{uuid.uuid4()}.{file_extension}"
-                    project.audio.save(unique_filename, audio_file, save=False)
+                    clean_filename = "".join(c for c in project.name if c.isalnum() or c in (' ', '-', '_')).rstrip()
+                    clean_filename = clean_filename.replace(' ', '_')
+                    audio_filename = f"{clean_filename}.{file_extension}"
+                    project.audio.save(audio_filename, audio_file, save=False)
                     project.save()
                     
                     # Запускаем обработку в фоне
