@@ -33,8 +33,6 @@ def project_delete(request, project_id):
                 project.vocal_audio.delete(save=False)
             if project.instrumental_audio:
                 project.instrumental_audio.delete(save=False)
-            if project.subtitle:
-                project.subtitle.delete(save=False)
                 
             # Удаляем сам проект
             project.delete()

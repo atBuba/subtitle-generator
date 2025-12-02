@@ -18,4 +18,6 @@ urlpatterns = [
     path('api/project/<int:project_id>/update-subtitle/', api_views.update_subtitle_content, name='update_subtitle_content'),
     path('api/projects/', api_views.list_projects, name='list_projects'),
     path('api/project/<int:project_id>/download-subtitle/', api_views.download_subtitle, name='download_subtitle'),
+    path('api/project/<int:project_id>/download-srt/', api_views.download_srt, name='download_srt'),
+    path('api/project/<int:project_id>/download-ass/', api_views.download_ass, name='download_ass'),
 ]

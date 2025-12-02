@@ -9,7 +9,7 @@ from django.core.files.base import ContentFile
 from django.conf import settings
 from django.db import transaction
 from .models import Project
-from .services.whisper_client import transcribe_audio
+from .services.whisper_client import transcribe_audio_vocal
 
 def generate_clean_filename(project_name, extension):
     """Генерирует чистое имя файла на основе названия проекта без uuid"""
@@ -125,17 +125,13 @@ def generate_subtitles(request):
             
             try:
                 # Используем функцию транскрибации
-                srt_content = transcribe_audio(audio_path)
-                
-                # Генерируем чистое имя файла субтитров без uuid
-                subtitle_filename = generate_clean_filename(project_name, 'srt')
-                subtitle_content = ContentFile(srt_content.encode('utf-8'))
-                project.subtitle.save(subtitle_filename, subtitle_content, save=False)
-                
-                # Обновляем статус проекта
+                whisper_response = transcribe_audio_vocal(audio_path)
+
+                # Сохраняем whisper_response
+                project.whisper_response = whisper_response
                 project.status = 'completed'
                 project.save()
-                
+
                 # Возвращаем успешный ответ
                 return JsonResponse({
                     'success': True,
@@ -143,7 +139,6 @@ def generate_subtitles(request):
                     'project_name': project.name,
                     'status': project.status,
                     'audio_url': project.get_audio_url(),
-                    'subtitle_url': project.get_subtitle_url(),
                     'created_at': project.created_at.isoformat(),
                     'message': 'Субтитры успешно сгенерированы!'
                 }, status=201)
@@ -184,8 +179,6 @@ def get_project_status(request, project_id):
         
         if project.audio:
             response_data['audio_url'] = project.get_audio_url()
-        if project.subtitle:
-            response_data['subtitle_url'] = project.get_subtitle_url()
         
         return JsonResponse({
             'success': True,
@@ -224,8 +217,6 @@ def list_projects(request):
             
             if project.audio:
                 project_data['audio_url'] = project.get_audio_url()
-            if project.subtitle:
-                project_data['subtitle_url'] = project.get_subtitle_url()
                 
             projects_data.append(project_data)
         
@@ -255,40 +246,33 @@ def generate_subtitles_for_project(request, project_id):
                 'success': False,
                 'error': 'Audio file not found for this project'
             }, status=400)
-        
-        if project.subtitle:
+
+        if project.whisper_response:
             return JsonResponse({
                 'success': False,
-                'error': 'Subtitle file already exists for this project'
+                'error': 'Whisper response already exists for this project'
             }, status=400)
-        
+
         # Обновляем статус проекта
         project.status = 'processing'
         project.save()
-        
+
         # Генерируем субтитры
         audio_path = project.get_audio_path()
-        
+
         try:
-            # Генерируем чистое имя файла субтитров без uuid
-            subtitle_filename = generate_clean_filename(project.name, 'srt')
-            
             # Используем функцию транскрибации
-            srt_content = transcribe_audio(audio_path)
-            
-            # Сохраняем субтитры в файл
-            subtitle_content = ContentFile(srt_content.encode('utf-8'))
-            project.subtitle.save(subtitle_filename, subtitle_content, save=False)
-            
-            # Обновляем статус проекта
+            whisper_response = transcribe_audio_vocal(audio_path)
+
+            # Сохраняем whisper_response
+            project.whisper_response = whisper_response
             project.status = 'completed'
             project.save()
-            
+
             # Возвращаем успешный ответ
             return JsonResponse({
                 'success': True,
                 'message': 'Субтитры успешно сгенерированы!',
-                'subtitle_url': project.get_subtitle_url(),
                 'status': project.status
             })
             
@@ -313,6 +297,8 @@ def generate_subtitles_for_project(request, project_id):
             'error': f'Unexpected error: {str(e)}'
         }, status=500)
 
+
+
 @csrf_exempt
 @require_http_methods(["GET"])
 def get_subtitle_content(request, project_id):
@@ -321,24 +307,22 @@ def get_subtitle_content(request, project_id):
     """
     try:
         project = Project.objects.get(id=project_id)
-        
-        if not project.subtitle:
+
+        if not project.whisper_response:
             return JsonResponse({
                 'success': False,
-                'error': 'Subtitle file not found for this project'
+                'error': 'Whisper response not found for this project'
             }, status=404)
-        
-        # Читаем содержимое файла субтитров
-        subtitle_path = project.get_subtitle_path()
-        with open(subtitle_path, 'r', encoding='utf-8') as subtitle_file:
-            content = subtitle_file.read()
-        
+
+        # Генерируем SRT контент из whisper_response
+        content = project.get_subtitle_content()
+
         return JsonResponse({
             'success': True,
             'content': content,
-            'filename': os.path.basename(project.subtitle.name)
+            'filename': project.get_subtitle_filename()
         })
-        
+
     except Project.DoesNotExist:
         return JsonResponse({
             'success': False,
@@ -358,13 +342,13 @@ def update_subtitle_content(request, project_id):
     """
     try:
         project = Project.objects.get(id=project_id)
-        
-        if not project.subtitle:
+
+        if not project.has_subtitles():
             return JsonResponse({
                 'success': False,
-                'error': 'Subtitle file not found for this project'
+                'error': 'Subtitles not found for this project'
             }, status=404)
-        
+
         # Получаем данные из запроса
         try:
             data = json.loads(request.body)
@@ -374,31 +358,27 @@ def update_subtitle_content(request, project_id):
                 'success': False,
                 'error': 'Invalid JSON data'
             }, status=400)
-        
+
         if not new_content.strip():
             return JsonResponse({
                 'success': False,
                 'error': 'Content cannot be empty'
             }, status=400)
-        
+
         # Валидация базового формата SRT
         if not validate_srt_format(new_content):
             return JsonResponse({
                 'success': False,
                 'error': 'Invalid SRT format. Please ensure the content follows the SRT standard.'
             }, status=400)
-        
-        # Сохраняем обновленное содержимое
-        subtitle_path = project.get_subtitle_path()
-        with open(subtitle_path, 'w', encoding='utf-8') as subtitle_file:
-            subtitle_file.write(new_content)
-        
-        # Обновляем время модификации проекта
-        project.save()
-        
+
+        # Поскольку субтитры теперь генерируются на лету из whisper_response,
+        # изменения не сохраняются. Функция только валидирует формат.
+        # В будущем можно добавить поле для хранения пользовательских изменений.
+
         return JsonResponse({
             'success': True,
-            'message': 'Субтитры успешно обновлены!',
+            'message': 'Субтитры успешно провалидированы! Изменения не сохранены, так как субтитры генерируются из Whisper данных.',
             'content_length': len(new_content)
         })
         
@@ -417,22 +397,26 @@ def update_subtitle_content(request, project_id):
 @require_http_methods(["GET"])
 def download_subtitle(request, project_id):
     """
-    API endpoint для скачивания файла субтитров
+    API endpoint для скачивания файла субтитров в формате SRT
     """
     try:
         project = Project.objects.get(id=project_id)
-        
-        if not project.subtitle:
+
+        if not project.has_subtitles():
             return JsonResponse({
                 'success': False,
-                'error': 'Subtitle file not found for this project'
+                'error': 'Subtitles not found for this project'
             }, status=404)
-        
-        # Возвращаем файл для скачивания
-        subtitle_file = open(project.get_subtitle_path(), 'rb')
-        response = FileResponse(subtitle_file, as_attachment=True, filename=os.path.basename(project.subtitle.name))
+
+        # Генерируем SRT контент на лету
+        srt_content = project.get_subtitle_content()
+
+        # Создаем временный файл для скачивания
+        from io import BytesIO
+        srt_bytes = BytesIO(srt_content.encode('utf-8'))
+        response = FileResponse(srt_bytes, as_attachment=True, filename=project.get_subtitle_filename())
         return response
-        
+
     except Project.DoesNotExist:
         return JsonResponse({
             'success': False,
@@ -442,4 +426,74 @@ def download_subtitle(request, project_id):
         return JsonResponse({
             'success': False,
             'error': f'Error downloading subtitle: {str(e)}'
+        }, status=500)
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def download_srt(request, project_id):
+    """
+    API endpoint для скачивания файла субтитров в стандартном формате SRT
+    """
+    try:
+        project = Project.objects.get(id=project_id)
+
+        if not project.has_subtitles():
+            return JsonResponse({
+                'success': False,
+                'error': 'Subtitles not found for this project'
+            }, status=404)
+
+        # Генерируем стандартный SRT контент на лету
+        srt_content = project.get_standard_srt_content()
+
+        # Создаем временный файл для скачивания
+        from io import BytesIO
+        srt_bytes = BytesIO(srt_content.encode('utf-8'))
+        response = FileResponse(srt_bytes, as_attachment=True, filename=project.get_subtitle_filename())
+        return response
+
+    except Project.DoesNotExist:
+        return JsonResponse({
+            'success': False,
+            'error': 'Project not found'
+        }, status=404)
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': f'Error downloading SRT subtitle: {str(e)}'
+        }, status=500)
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def download_ass(request, project_id):
+    """
+    API endpoint для скачивания файла субтитров в формате ASS
+    """
+    try:
+        project = Project.objects.get(id=project_id)
+
+        if not project.has_subtitles():
+            return JsonResponse({
+                'success': False,
+                'error': 'Subtitles not found for this project'
+            }, status=404)
+
+        # Генерируем ASS контент на лету
+        ass_content = project.get_ass_content()
+
+        # Создаем временный файл для скачивания
+        from io import BytesIO
+        ass_bytes = BytesIO(ass_content.encode('utf-8'))
+        response = FileResponse(ass_bytes, as_attachment=True, filename=project.get_ass_filename())
+        return response
+
+    except Project.DoesNotExist:
+        return JsonResponse({
+            'success': False,
+            'error': 'Project not found'
+        }, status=404)
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': f'Error downloading ASS subtitle: {str(e)}'
         }, status=500)

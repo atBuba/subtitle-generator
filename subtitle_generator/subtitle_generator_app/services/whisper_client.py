@@ -6,22 +6,22 @@ client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
 def transcribe_audio_vocal(vocal_file_path):
     """
-    Транскрибирует вокальную дорожку в формат SRT.
+    Транскрибирует вокальную дорожку в формат verbose JSON с timestamps слов.
     """
     if not os.path.exists(vocal_file_path):
         raise FileNotFoundError(f"Vocal audio file not found at: {vocal_file_path}")
 
     with open(vocal_file_path, "rb") as audio_file:
-        # Whisper API умеет сразу возвращать srt, что экономит время на парсинг
         transcription = client.audio.transcriptions.create(
             model="whisper-1",
             prompt="Transcribe the song lyrics accurately. Ignore silence.",
             file=audio_file,
-            response_format="srt",
-            temperature=0,
+            response_format="verbose_json",
+            timestamp_granularities=["word", "segment"],
+            temperature=0.2,
         )
-    
-    return transcription
+
+    return transcription.to_dict()
 
 def transcribe_audio(file_path):
     """

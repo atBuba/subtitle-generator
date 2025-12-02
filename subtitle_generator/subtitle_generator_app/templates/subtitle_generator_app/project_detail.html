@@ -29,8 +29,8 @@
     <div class="project-layout">
         <!-- Левая колонка - субтитры -->
         <div class="subtitle-column">
-            {% if project.subtitle %}
-            <div class="content-card">        
+            {% if project.has_subtitles %}
+            <div class="content-card">
                 <div id="subtitleContent" class="card-content">
                     
                     <!-- Режим просмотра -->
@@ -207,14 +207,22 @@
                 
                 <div class="card-content">
                     <div class="actions-list">
-                        {% if project.subtitle %}
-                            <a href="{% url 'download_subtitle' project.id %}" class="action-btn secondary">
+                        {% if project.has_subtitles %}
+                            <a href="{% url 'download_srt' project.id %}" class="action-btn secondary">
                                 <svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"></path>
                                     <polyline points="7,10 12,15 17,10"></polyline>
                                     <line x1="12" y1="15" x2="12" y2="3"></line>
                                 </svg>
-                                Скачать субтитры
+                                Скачать SRT
+                            </a>
+                            <a href="{% url 'download_ass' project.id %}" class="action-btn secondary">
+                                <svg class="action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"></path>
+                                    <polyline points="7,10 12,15 17,10"></polyline>
+                                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                                </svg>
+                                Скачать ASS
                             </a>
                         {% endif %}
                         
@@ -288,6 +296,7 @@ function initializeInlinePlayer() {
     
     let subtitleBlocks = [];
     let currentActiveBlock = null;
+    let currentActiveWord = null;
     let playbackSpeeds = [0.5, 0.75, 1, 1.25, 1.5, 2];
     let currentSpeedIndex = 2; // 1x
     
@@ -421,31 +430,61 @@ function initializeInlinePlayer() {
         const pauseIcon = playPauseBtn.querySelector('.pause-icon');
         playIcon.style.display = 'block';
         pauseIcon.style.display = 'none';
-        
+
         // Сброс активного блока
         if (currentActiveBlock) {
             currentActiveBlock.classList.remove('active');
             currentActiveBlock = null;
+        }
+
+        // Сброс активного слова
+        if (currentActiveWord) {
+            currentActiveWord.classList.remove('active-word');
+            currentActiveWord = null;
         }
     });
     
     // Функция синхронизации с субтитрами
     function updateInlineSubtitleSync(currentTime) {
         if (subtitleBlocks.length === 0) return;
-        
+
         const activeBlock = findInlineActiveSubtitleBlock(currentTime);
-        
+
         if (activeBlock && activeBlock !== currentActiveBlock) {
             if (currentActiveBlock) {
                 currentActiveBlock.classList.remove('active');
+                // Снимаем выделение с предыдущего активного слова
+                if (currentActiveWord) {
+                    currentActiveWord.classList.remove('active-word');
+                    currentActiveWord = null;
+                }
             }
-            
+
             activeBlock.classList.add('active');
             currentActiveBlock = activeBlock;
             scrollToInlineActiveBlock(activeBlock);
         } else if (!activeBlock && currentActiveBlock) {
             currentActiveBlock.classList.remove('active');
             currentActiveBlock = null;
+            if (currentActiveWord) {
+                currentActiveWord.classList.remove('active-word');
+                currentActiveWord = null;
+            }
+        }
+
+        // Выделяем активное слово внутри активного блока
+        if (currentActiveBlock) {
+            const activeWord = findInlineActiveWord(currentActiveBlock, currentTime);
+            if (activeWord && activeWord !== currentActiveWord) {
+                if (currentActiveWord) {
+                    currentActiveWord.classList.remove('active-word');
+                }
+                activeWord.classList.add('active-word');
+                currentActiveWord = activeWord;
+            } else if (!activeWord && currentActiveWord) {
+                currentActiveWord.classList.remove('active-word');
+                currentActiveWord = null;
+            }
         }
     }
     
@@ -454,9 +493,23 @@ function initializeInlinePlayer() {
         for (let block of subtitleBlocks) {
             const startTime = parseTime(block.dataset.startTime);
             const endTime = parseTime(block.dataset.endTime);
-            
+
             if (currentTime >= startTime && currentTime <= endTime) {
                 return block;
+            }
+        }
+        return null;
+    }
+
+    // Функция поиска активного слова в блоке
+    function findInlineActiveWord(block, currentTime) {
+        const wordItems = block.querySelectorAll('.word-item');
+        for (let wordItem of wordItems) {
+            const wordStart = parseTime(wordItem.dataset.wordStart);
+            const wordEnd = parseTime(wordItem.dataset.wordEnd);
+
+            if (currentTime >= wordStart && currentTime <= wordEnd) {
+                return wordItem;
             }
         }
         return null;
@@ -590,13 +643,13 @@ function loadSubtitleContent(projectId) {
 function parseSubtitleBlocks(content) {
     const blocks = [];
     const entries = content.split(/\n\s*\n/).filter(entry => entry.trim());
-    
+
     entries.forEach((entry, index) => {
         const lines = entry.split('\n');
         const number = lines[0] ? lines[0].trim() : (index + 1).toString();
         const timecode = lines[1] ? lines[1].trim() : '';
-        const text = lines.slice(2).join(' ').trim();
-        
+        const text = lines.slice(2).join('\n').trim(); // Сохраняем переносы строк между словами
+
         if (timecode && text) {
             blocks.push({
                 number: number,
@@ -605,7 +658,7 @@ function parseSubtitleBlocks(content) {
             });
         }
     });
-    
+
     return blocks;
 }
 
@@ -613,22 +666,34 @@ function parseSubtitleBlocks(content) {
 function renderSubtitleBlocks(blocks, container) {
     container.innerHTML = '';
     const blockElements = [];
-    
+
     blocks.forEach((block, index) => {
         const blockElement = document.createElement('div');
         blockElement.className = 'subtitle-block';
         blockElement.draggable = true;
         blockElement.dataset.index = index;
-        
+
         // Извлечение времени начала and окончания
         const times = block.timecode.split(' --> ');
         const startTime = times[0] ? times[0].trim() : '';
         const endTime = times[1] ? times[1].trim() : '';
-        
+
         // Сохраняем время в data атрибуты для синхронизации с аудио
         blockElement.dataset.startTime = startTime;
         blockElement.dataset.endTime = endTime;
-        
+
+        // Разбираем текст на слова с временными метками
+        const wordLines = block.text.split('\n').filter(line => line.trim());
+        const wordElements = wordLines.map(line => {
+            // Парсим строку вида "слово 00:00:12,899 --> 00:00:14,300"
+            const match = line.trim().match(/^(.+?)\s+(\d{2}:\d{2}:\d{2},\d{3})\s+-->\s+(\d{2}:\d{2}:\d{2},\d{3})$/);
+            if (match) {
+                const [, word, wordStart, wordEnd] = match;
+                return `<div class="word-item" data-word-start="${wordStart}" data-word-end="${wordEnd}">${word} ${wordStart} --> ${wordEnd}</div>`;
+            }
+            return `<div class="word-item">${line}</div>`;
+        }).join('');
+
         blockElement.innerHTML = `
             <div class="block-header">
                 <span class="block-number">${block.number}</span>
@@ -654,12 +719,12 @@ function renderSubtitleBlocks(blocks, container) {
                     </button>
                 </div>
             </div>
-            <div class="block-content" contenteditable="false">${block.text}</div>
+            <div class="block-content" contenteditable="false">${wordElements}</div>
         `;
-        
+
         blockElements.push(blockElement);
         container.appendChild(blockElement);
-        
+
         // Добавляем кнопку добавления блока after каждого элемента, кроме последнего
         if (index < blocks.length - 1) {
             const addBlockButton = document.createElement('div');
@@ -675,18 +740,18 @@ function renderSubtitleBlocks(blocks, container) {
             container.appendChild(addBlockButton);
         }
     });
-    
+
     // Передаем блоки во встроенный проигрыватель для синхронизации
     if (window.inlinePlayerFunctions) {
         window.inlinePlayerFunctions.setSubtitleBlocks(blockElements);
     }
-    
+
     // Добавляем обработчики перетаскивания
     addDragAndDropHandlers(container);
-    
+
     // Добавляем обработчики for двойного клика и других действий
     addBlockEventHandlers(container);
-    
+
     // Добавляем обработчики for кнопок добавления блоков
     addAddBlockButtonHandlers(container);
 }
@@ -779,17 +844,24 @@ function saveBlockChanges(block) {
     const projectId = document.querySelector('.project-detail').dataset.projectId;
     const blocks = document.querySelectorAll('.subtitle-block');
     let content = '';
-    
+
     // Собираем все блоки в формат SRT
     blocks.forEach((block, index) => {
         const number = block.querySelector('.block-number').textContent;
         const timeStart = block.querySelector('.time-start').textContent;
         const timeEnd = block.querySelector('.time-end').textContent;
-        const text = block.querySelector('.block-content').textContent;
-        
-        content += `${number}\n${timeStart} --> ${timeEnd}\n${text}\n\n`;
+
+        content += `${number}\n${timeStart} --> ${timeEnd}\n`;
+
+        // Собираем слова из word-item элементов
+        const wordItems = block.querySelectorAll('.word-item');
+        wordItems.forEach(wordItem => {
+            content += `${wordItem.textContent}\n`;
+        });
+
+        content += '\n';
     });
-    
+
     // Отправляем изменения на сервер
     fetch(`/api/project/${projectId}/update-subtitle/`, {
         method: 'PUT',
@@ -842,15 +914,22 @@ function deleteBlock(block) {
         const projectId = document.querySelector('.project-detail').dataset.projectId;
         const blocks = document.querySelectorAll('.subtitle-block');
         let content = '';
-        
+
         // Собираем оставшиеся блоки
         blocks.forEach((block, index) => {
             const number = block.querySelector('.block-number').textContent;
             const timeStart = block.querySelector('.time-start').textContent;
             const timeEnd = block.querySelector('.time-end').textContent;
-            const text = block.querySelector('.block-content').textContent;
-            
-            content += `${number}\n${timeStart} --> ${timeEnd}\n${text}\n\n`;
+
+            content += `${number}\n${timeStart} --> ${timeEnd}\n`;
+
+            // Собираем слова из word-item элементов
+            const wordItems = block.querySelectorAll('.word-item');
+            wordItems.forEach(wordItem => {
+                content += `${wordItem.textContent}\n`;
+            });
+
+            content += '\n';
         });
         
         // Отправляем изменения на сервер
@@ -904,23 +983,30 @@ function enterEditMode() {
     const viewMode = document.getElementById('viewMode');
     const editMode = document.getElementById('editMode');
     const subtitleEditor = document.getElementById('subtitleEditor');
-    
+
     // Собираем содержимое из блоков
     const blocks = document.querySelectorAll('.subtitle-block');
     let content = '';
-    
+
     blocks.forEach((block, index) => {
         const number = block.querySelector('.block-number').textContent;
         const timeStart = block.querySelector('.time-start').textContent;
         const timeEnd = block.querySelector('.time-end').textContent;
-        const text = block.querySelector('.block-content').textContent;
-        
-        content += `${number}\n${timeStart} --> ${timeEnd}\n${text}\n\n`;
+
+        content += `${number}\n${timeStart} --> ${timeEnd}\n`;
+
+        // Собираем слова из word-item элементов
+        const wordItems = block.querySelectorAll('.word-item');
+        wordItems.forEach(wordItem => {
+            content += `${wordItem.textContent}\n`;
+        });
+
+        content += '\n';
     });
-    
+
     // Копируем содержимое в редактор
     subtitleEditor.value = content;
-    
+
     // Переключаем режимы
     viewMode.style.display = 'none';
     editMode.style.display = 'block';
@@ -1168,17 +1254,24 @@ function saveAllBlocks(container) {
     const projectId = document.querySelector('.project-detail').dataset.projectId;
     const blocks = container.querySelectorAll('.subtitle-block');
     let content = '';
-    
+
     // Собираем все блоки в формат SRT
     blocks.forEach((block, index) => {
         const number = block.querySelector('.block-number').textContent;
         const timeStart = block.querySelector('.time-start').textContent;
         const timeEnd = block.querySelector('.time-end').textContent;
-        const text = block.querySelector('.block-content').textContent;
-        
-        content += `${number}\n${timeStart} --> ${timeEnd}\n${text}\n\n`;
+
+        content += `${number}\n${timeStart} --> ${timeEnd}\n`;
+
+        // Собираем слова из word-item элементов
+        const wordItems = block.querySelectorAll('.word-item');
+        wordItems.forEach(wordItem => {
+            content += `${wordItem.textContent}\n`;
+        });
+
+        content += '\n';
     });
-    
+
     // Отправляем изменения на сервер
     fetch(`/api/project/${projectId}/update-subtitle/`, {
         method: 'PUT',
@@ -2066,6 +2159,23 @@ document.addEventListener('DOMContentLoaded', function() {
     font-size: 15px;
     padding: 8px 0;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.word-item {
+    margin-bottom: 4px;
+    padding: 2px 0;
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    transition: background-color 0.2s ease;
+}
+
+.word-item.active-word {
+    background-color: #dbeafe;
+    color: #1e40af;
+    font-weight: 600;
+    border-radius: 4px;
+    padding: 4px 6px;
+    margin: 2px 0;
 }
 
 .block-content.editing {
